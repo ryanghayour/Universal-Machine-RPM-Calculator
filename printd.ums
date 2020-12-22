@@ -1,0 +1,63 @@
+// Jack Burns and Ryan Ghayour
+// printd.ums
+// April 28, 2020
+// Purpose: print a value to stdout
+
+.section init
+    .temps r6, r7
+    .zero r0
+
+.section data
+    // r1 holds the return address
+    // r4 holds the word to be printed
+    // nonvolatiles r4, r5
+    // r0 is zero
+
+    printd:
+        push r3 on stack r2  // preserve value stack pointer
+        push r1 on stack r2  // preserve return address
+
+        output ">>> "
+        if (r4 == r0) goto print_zero using r5
+        if (r4 <s r0) goto output_negative using r5
+
+    after_neg:
+        r5 := 1
+
+    // Loops until the value in r5 holds the same number of digits as the
+    // number to print
+    ten_loop:
+        r1 := r4 / r5
+        if (r1 <s 10) goto print_loop using r3
+        r5 := r5 * 10
+        goto ten_loop
+
+    // Prints the most significant digit of a number until every digit of
+    // the value is printed
+    print_loop:
+        r3 := r4 / r5      // r3 holds ascii of digit to print
+        r3 := r3 + 48      //r3 holds actual digit to print
+        output r3
+
+        r4 := r4 mod r5     // gets the most significant digit of r4
+        if (r5 == 1) goto end_print using r3
+        r5 := r5 / 10       // reduce r5 by a factor of 10 every loop
+        goto print_loop
+
+    // prints a negative sign to stdout and converts the value to a positive
+    // value
+    output_negative:
+        output "-"
+        r4 := r4 * -1   // r4's representaion for the rest of printing is pos
+        goto after_neg
+
+    // Outputs a zero 
+    print_zero:
+        output 48
+
+    // Restores the call stack
+    end_print:
+        output "\n"
+        pop r1 off stack r2  // return address
+        pop r3 off stack r2  // get the value stack pointer
+        goto r1
