@@ -1,0 +1,402 @@
+// Jack Burns and Ryan Ghayour
+// 
+// calc40.ums
+// April 28 2020
+// Purpose: set up the value stack and jump table and contains command 
+// functions
+
+.section init
+    .temps r6, r7 
+    .zero r0
+
+    r4 := 0    // r4 is set to zero to act as a counter
+ 
+    // Each value of the jumptable is initialized to input_error
+    // nonvolatiles r4, r5
+    initialize_table_error:
+        r5 := jumptable + r4
+        m[r0][r5] := input_error
+
+        r4 := r4 + 1
+        r6 := 255    // r6 holds max value for the counter
+        if (r4 <s r6) goto initialize_table_error using r5 
+
+    // Each ascii value index of the jumptable that corresponds to a command
+    // is set to the corresponding label.
+    initialize_table:
+
+        r5 := jumptable + 32   
+        m[r0][r5] := waiting  // Value at address of jumptable is set to label
+
+        r5 := jumptable + 10
+        m[r0][r5] := newline
+
+        r5 := jumptable + 43
+        m[r0][r5] := add
+
+        r5 := jumptable + 45
+        m[r0][r5] := subtract
+
+        r5 := jumptable + 42
+        m[r0][r5] := multiply
+
+        r5 := jumptable + 47
+        m[r0][r5] := divide
+
+        r5 := jumptable + 124
+        m[r0][r5] := or
+
+        r5 := jumptable + 38
+        m[r0][r5] := and
+
+        r5 := jumptable + 99
+        m[r0][r5] := change_sign
+
+        r5 := jumptable + 126
+        m[r0][r5] := bitwise_complement
+
+        r5 := jumptable + 115
+        m[r0][r5] := swap
+
+        r5 := jumptable + 100
+        m[r0][r5] := duplicate
+
+        r5 := jumptable + 112
+        m[r0][r5] := pop_value
+
+        r5 := jumptable + 122
+        m[r0][r5] := zero_stack
+
+        r4:= 47    // r4 is set to ascii value before 0
+
+    // Sets indices of the jump table that correspond to the 10 digits
+    digit_call:
+        r5 := 57                       // r5 is set to the ascii value for 9
+        r4 := r4 + 1                 
+        r7 := jumptable + r4
+        m[r0][r7] := single_digit
+        if (r4 <s r5) goto digit_call using r3 
+
+.section data
+    
+    .space 15000       // space for 15000 words allocated in zero segment for
+                       // value stack  
+    startstack:        // label always points to the start of the stack
+    valuestack:        
+
+.section rodata
+
+    jumptable: 
+    .space 256   // Space for 256 entries allocated in zero segment to be read
+                 // only 
+
+.section text
+    // r0 is zero
+    // stack pointer in r2
+    // value stack pointer in r3
+    // nonvolatiles r4, r5
+    // volatiles r6, r7
+    // r1 holds return address
+    main:
+        push r1 on stack r2    // save return address 
+        push r3 on stack r2    // save value stack pointer
+        
+    // jumps to the label on the jumptable corresponding to input
+    // Input is always stored in r4
+    waiting:
+        r4 := input() 
+
+    waiting_with_input:
+        r5 := 4294967295    // 32 bit word in which all bits are 1 in r5
+        if (r4 == r5) goto halt_prog using r3 
+        r5 := jumptable + r4 
+        goto m[r0][r5] using r3 
+        goto waiting
+
+    // Restores registers and returns to callmain
+    halt_prog:
+        pop r3 off stack r2   // Value stack pointer
+        pop r1 off stack r2   // Return address from callmain
+        goto r1
+
+    // Prints out the value of the stack
+    newline:
+        pop r3 off stack r2 // Value stack pointer
+        r1 := r0
+    
+    // Gets the next value from the value stack and loads it in r4  
+    get_number:
+        if (r3 == startstack) goto add_values using r5
+        pop r4 off stack r3
+        r5 := r4
+        push r5 on stack r2 // Duplicate of that value saved on call stack
+        r1 := r1 + 1
+
+    // Calls print function
+    call_printd:
+            push r1 on stack r2
+            goto printd linking r1 using r5
+            pop r1 off stack r2
+            goto get_number
+
+    // Removes values from the call stack and puts them back in the value stack
+    // r1 is the counter for number of values on the stack
+    add_values:
+            if (r1 == 0) goto finish_print using r5
+            pop r4 off stack r2
+            r1 := r1 - 1
+            push r4 on stack r3
+            goto add_values
+
+    // Restores the call stack
+    finish_print:
+            push r3 on stack r2  // save the value stack pointer
+            goto waiting
+
+    // Pushes a one digit number onto the value stack
+    single_digit:
+            pop r3 off stack r2 // Value stack pointer
+            r4:= r4 - 48        // Get the non-ascii value of the digit
+            r5:= r4
+            goto add_digit
+
+    // Pops a number off the value stack and pushes a new value with r4
+    // appended to the back
+    entering:
+        pop r5 off stack r3
+        r5 := r5 * 10
+        r4 := r4 - 48
+        r5 := r5 + r4
+
+    // Recieves input and either continues entering values onto the stack or
+    // goes back to waiting
+    add_digit:
+        push r5 on stack r3 
+        r4 := input()
+        r1 := r4 + jumptable
+        r5 := m[r0][r1]
+        if (r5 == single_digit) goto entering using r1 
+        push r3 on stack r2       
+        goto waiting_with_input // Called because input has already been taken
+
+    // * for all operations below, the parameter or parameters are all stored
+    // on the value stack *
+    // * for all operations below, r4 is loaded with the first value and r5 is
+    // loaded with the second value if 2 values are needed *
+
+    // Adds top two values on the value stack and stores the sum
+    // nonvolatiles r4, r5
+    add:
+        pop r3 off stack r2   // Value stack pointer
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3
+        if (r3 == startstack) goto print_underflow_2 using r5
+        pop r5 off stack r3
+        r4 := r4 + r5
+        push r4 on stack r3  // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Subtracts top two values on the value stack and stores the difference
+    // nonvolatiles r4, r5
+    subtract:
+        pop r3 off stack r2    // Value stack pointer   
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3  
+        if (r3 == startstack) goto print_underflow_2 using r5
+        pop r5 off stack r3
+        r4 := r5 - r4
+        push r4 on stack r3  // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Multiplies top two values on the value stack and stores the product
+    // nonvolatiles r4, r5
+    multiply:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3
+        if (r3 == startstack) goto print_underflow_2 using r5
+        pop r5 off stack r3
+        r4 := r5 * r4
+        push r4 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Divides top two values on the value stack and stores the quotient
+    // nonvolatiles r4, r5
+    divide:
+        pop r3 off stack r2    // Value stack pointer
+        r1 := 1                // final 'converter' used for signed division
+
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3
+
+        if (r3 == startstack) goto print_underflow_2 using r5
+        if (r4 == r0) goto div_zero  using r5
+        if (r4 >s r0) goto check_num using r5
+
+        // This section changes the denominator to a positive value and sets
+        // the converter to negative
+        r5 := -1
+        r4 := r4 * r5
+        r1 := r1 * r5
+
+    check_num:
+        push r4 on stack r2   // save denominator
+        pop r5 off stack r3
+        if (r5 >s r0) goto add_quotient using r4
+
+        // This section changes the numerator to a positive value and sets
+        // the converter to negative
+        r4 := -1
+        r5 := r5 * r4
+        r1 := r1 * r4
+
+    add_quotient:
+        pop r4 off stack r2   // get denominator
+        r4 := r5 / r4
+        r4 := r4 * r1         // Changes the quotient to negative if converter
+                              // was set
+        push r4 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Performs a bitwise or on top two values on the value stack and stores
+    // the result
+    // nonvolatiles r4, r5
+    or:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3
+        if (r3 == startstack) goto print_underflow_2 using r5
+        pop r5 off stack r3
+        r4 := r5 | r4
+        push r4 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Performs a bitwise and on top two values on the value stack and stores
+    // the result
+    // nonvolatiles r4, r5
+    and:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3
+        if (r3 == startstack) goto print_underflow_2 using r5
+        pop r5 off stack r3
+        r4 := r5 & r4
+        push r4 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Reverses the sign of the first value on the value stack and stores it
+    // nonvolatiles r4, r5
+    change_sign:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_1 using r5
+        pop r4 off stack r3
+        r4 := -r4
+        push r4 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Removes the first value from the value stack, and stores its bit
+    // flipped value
+    // nonvolatiles r4, r5
+    bitwise_complement:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_1 using r5
+        pop r4 off stack r3
+        r4 := ~r4
+        push r4 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Swaps the order of the first two elements on the value stack
+    // nonvolatiles r4, r5
+    swap:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_store using r5
+        pop r4 off stack r3
+        if (r3 == startstack) goto print_underflow_2 using r5
+        pop r5 off stack r3 
+        push r4 on stack r3   // store return value on value stack
+        push r5 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Copies the first value in the value stack and stores the original and
+    // the copy
+    // nonvolatiles r4, r5
+    duplicate:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_1 using r5
+        pop r4 off stack r3
+        r5 := r4
+        push r4 on stack r3   // store return value on value stack
+        push r5 on stack r3   // store return value on value stack
+        push r3 on stack r2
+        goto waiting
+
+    // Removes the first value from the value stack
+    // Does not return anything
+    // nonvolatiles r4, r5
+    pop_value:
+        pop r3 off stack r2    // Value stack pointer
+        if (r3 == startstack) goto print_underflow_1 using r5
+        pop r4 off stack r3
+        push r3 on stack r2
+        goto waiting
+
+    // Removes all values from the value stack
+    // Does not return anything
+    // nonvolatiles r4, r5
+    zero_stack:
+        pop r3 off stack r2    // Value stack pointer
+
+    // Recursive call to remove single element
+    // nonvolatiles r4, r5
+    zero_stack_loop:
+        if (r3 == startstack) goto zero_stack_end using r5
+        pop r4 off stack r3
+        goto zero_stack_loop
+
+    // Restores call stack after value stack is cleared
+    zero_stack_end:
+        push r3 on stack r2
+        goto waiting
+
+    // prints message to stdout and program goes back to waiting
+    input_error:
+        output "Unknown character '"
+        output r4
+        output "'\n"
+        goto waiting
+
+    // prints error message if user tries to divide by 0 and 
+    // program goes back to waiting
+    div_zero:
+        output "Division by zero\n"
+        push r4 on stack r3
+        push r3 on stack r2
+        goto waiting
+
+    // prints error if the value stack is empty on an operand that needs 
+    // at least one value
+    print_underflow_1:
+        output "Stack underflow---expected at least 1 element\n"
+        push r3 on stack r2
+        goto waiting
+
+    // prints error if the value stack has 1 value on an operand that needs
+    // at least two values
+    print_underflow_2:
+        push r4 on stack r3  // preserve the ony value
+
+    // prints error if the value stack has 0 values on an operand that needs
+    // at least 2 values
+    print_underflow_store:
+        output "Stack underflow---expected at least 2 elements\n"
+        push r3 on stack r2
+        goto waiting
