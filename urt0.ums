@@ -1,0 +1,13 @@
+//Jack Burns and Ryan Ghayour
+// 
+// urt0.ums
+// April 28 2020
+// Purpose: set up the call stack.
+
+.section init
+    .temps r6, r7
+    .zero r0
+
+.section data
+    .space 20000   // allocate space for callstack
+    endstack:
