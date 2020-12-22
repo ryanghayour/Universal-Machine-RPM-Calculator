@@ -1,0 +1,15 @@
+// Jack Burns and Ryan Ghayour
+// 
+// callmain.ums
+// April 28, 2020
+// Purpose: make the initial call to main
+
+.section init
+    .temps r6, r7
+    .zero r0
+start:
+    r0 := 0
+    r3 := valuestack  // set r3 as the value stack pointer
+    r2 := endstack    // set r2 as the stack pointer
+    goto main linking r1    // call main
+    halt
